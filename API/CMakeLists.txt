@@ -1,0 +1,16 @@
+cmake_minimum_required(VERSION 3.15)
+
+set(CMAKE_CXX_STANDARD 17) 
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+if(NOT CMAKE_CONFIGURATION_TYPES)
+    set(CMAKE_CONFIGURATION_TYPES "Debug;Release" CACHE STRING "Available build types." FORCE)
+endif()
+
+project(API)
+
+file(GLOB_RECURSE SRC_FILES "${PROJECT_SOURCE_DIR}/*.c")
+file(GLOB_RECURSE HEADER_FILES "${PROJECT_SOURCE_DIR}/*.h")
+
+add_library(${PROJECT_NAME} STATIC ${SRC_FILES} ${HEADER_FILES})
+target_compile_definitions(${PROJECT_NAME} PRIVATE _GLFW_WIN32)
