@@ -9,3 +9,6 @@ add_subdirectory(API)
 
 add_subdirectory(HelloWindow)
 add_dependencies(HelloWindow API)
+
+add_subdirectory(HelloTriangle)
+add_dependencies(HelloTriangle API)

@@ -9,6 +9,9 @@ endif()
 
 project(HelloWindow)
 
+include_directories(${PROJECT_SOURCE_DIR}/../API/GLAD/inc)
+include_directories(${PROJECT_SOURCE_DIR}/../API/GLFW/inc)
+
 add_executable(${PROJECT_NAME} main.cpp)
 
 target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_SOURCE_DIR}/API)
