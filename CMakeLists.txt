@@ -12,3 +12,6 @@ add_dependencies(HelloWindow API)
 
 add_subdirectory(HelloTriangle)
 add_dependencies(HelloTriangle API)
+
+add_subdirectory(Shadow)
+add_dependencies(Shadow API)
