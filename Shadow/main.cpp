@@ -72,37 +72,88 @@ int main()
 		}
 	)";
 
-	ShaderProgram shadowProgram;
-	shadowProgram.compile(depthVC.c_str(), R"(
+	ShaderProgram depthrogram;
+	depthrogram.compile(depthVC.c_str(), R"(
 		#version 460 core
 		void main()
 		{
 		}
 	)");
 
-	glm::vec3 lightPos = glm::vec3(3.0f, 3.0f, 0.0f);
+	glm::vec3 lightPos = glm::vec3(3.0f, 0.0f, 3.0f);
 
 	glm::mat4 lightView = glm::lookAt(lightPos, glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
 	glm::mat4 lightProjection = glm::ortho(-10.0f, 10.0f, -10.0f, 10.0f, 1.0f, 10.0f);
 	glm::mat4 lightsapceMatrix = lightProjection * lightView;
 
-	ShaderProgram test;
-	test.compile(R"(
+	ShaderProgram shadow;
+	shadow.compile(R"(
 		#version 460 core
 		layout(location = 0) in vec3 aPos;
+
+		uniform mat4 lightSpaceMatrix;
+		uniform mat4 model;
+		uniform mat4 view;
+		uniform mat4 projection;
+
+		out VS_OUT
+		{
+			vec3 FragPos;
+			vec3 FragPosViewSpace;
+			vec4 FragPosLightSpace;
+		} vs_out;
+
 		void main()
 		{
-			gl_Position = vec4(aPos, 1.0);
+			vs_out.FragPos = vec3(model * vec4(aPos, 1.0));
+			vs_out.FragPosViewSpace = vec3(view * vec4(vs_out.FragPos, 1.0));
+			vs_out.FragPosLightSpace = lightSpaceMatrix * vec4(vs_out.FragPos, 1.0);
+			gl_Position = projection * view * model * vec4(aPos, 1.0);
 		}
 	)", R"(
 		#version 460 core
 		out vec4 FragColor;
+
+		in VS_OUT
+		{
+			vec3 FragPos;
+			vec3 FragPosViewSpace;
+			vec4 FragPosLightSpace;
+		} fs_in;
+
 		uniform sampler2D depthMap;
+		uniform vec3 CC;
+
+		float ShadowCalculation(vec4 fragPosLightSpace)
+		{
+			vec3 projCoords = fragPosLightSpace.xyz / fragPosLightSpace.w;
+			projCoords = projCoords * 0.5 + 0.5;
+			float closestDepth = texture(depthMap, projCoords.xy).r;
+			float currentDepth = projCoords.z;
+			float shadow = currentDepth > closestDepth  ? 1.0 : 0.0;
+
+			return shadow;
+		}
+
 		void main()
 		{
-			vec2 uv = gl_FragCoord.xy / vec2(800, 600);
-			float depthValue = texture(depthMap, uv).r;
-			FragColor = vec4(vec3(depthValue), 1.0);
+			vec3 vertexVC = fs_in.FragPosViewSpace;
+
+			vec3 fdx = dFdx(vertexVC);
+			vec3 fdy = dFdy(vertexVC);
+			vec3 normal = normalize(cross(fdx, fdy));
+			if(normal.z < 0.0) normal = -normal;
+
+			vec3 color = CC;
+
+			float df = max(0.00001, normal.z);
+
+			color *= df;
+
+			float shadow = ShadowCalculation(fs_in.FragPosLightSpace);
+			//color *= shadow;
+
+			FragColor = vec4(color, 1.0);
 		}
 	)");
 
@@ -113,26 +164,40 @@ int main()
 		glClear(GL_DEPTH_BUFFER_BIT);
 
 		glm::mat4 model = glm::mat4(1);
-		shadowProgram.bind();
-		shadowProgram.SetValue("lightSpaceMatrix", lightsapceMatrix);
-		shadowProgram.SetValue("model", model);
+		depthrogram.bind();
+		depthrogram.SetValue("lightSpaceMatrix", lightsapceMatrix);
+		depthrogram.SetValue("model", model);
 		RenderCube();
 		model = glm::mat4(1);
-		model = glm::translate(model, glm::vec3(0, 0, -1));
-		model = glm::scale(model, glm::vec3(2.0f, 2.0f, 1.0f));
-		shadowProgram.SetValue("lightSpaceMatrix", lightsapceMatrix);
-		shadowProgram.SetValue("model", model);
+		depthrogram.SetValue("lightSpaceMatrix", lightsapceMatrix);
+		depthrogram.SetValue("model", model);
 		RenderQuad();
 
 		glBindFramebuffer(GL_FRAMEBUFFER, 0);
 		glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
-		glClear(GL_COLOR_BUFFER_BIT);
+		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-		test.bind();
-		test.SetValue("depthMap", 0);
+		auto view = camera.getviewmatrix();
+		auto projection = camera.getprojmatrix(800.0f / 600.0f);
+
+		shadow.bind();
+		shadow.SetValue("depthMap", 0);
 		glActiveTexture(GL_TEXTURE0);
 		glBindTexture(GL_TEXTURE_2D, texture);
-		RenderQuad();
+		model = glm::mat4(1);
+		shadow.SetValue("projection", projection);
+		shadow.SetValue("view", view);
+		shadow.SetValue("model", model);
+		RenderCube();
+
+		shadow.SetValue("depthMap", 0);
+		glActiveTexture(GL_TEXTURE0);
+		glBindTexture(GL_TEXTURE_2D, texture);
+		model = glm::mat4(1);
+		shadow.SetValue("projection", projection);
+		shadow.SetValue("view", view);
+		shadow.SetValue("model", model);
+		//RenderQuad();
 
 		glfwSwapBuffers(window);
 		glfwPollEvents();
