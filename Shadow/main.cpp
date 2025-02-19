@@ -4,6 +4,9 @@
 #include <glfw3.h>
 #include <glm.hpp>
 #include <gtc/matrix_transform.hpp>
+#include <gtc/quaternion.hpp>
+#define GLM_ENABLE_EXPERIMENTAL
+#include <gtx/quaternion.hpp>
 #include <ShaderProgram.h>
 #include <Camera.h>
 
@@ -11,6 +14,127 @@ Camera camera;
 
 void RenderCube();
 void RenderQuad();
+
+bool mouseLeftPressed = false;
+bool mouseRightPressed = false;
+double lastX = 0.0, lastY = 0.0;
+float deltaX = 0.0, deltaY = 0.0;
+double scrollOffsetX = 0.0, scrollOffsetY = 0.0;
+
+void mouse_button_callback(GLFWwindow* window, int button, int action, int mods)
+{
+	if (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_PRESS)
+	{
+		mouseLeftPressed = true;
+		glfwGetCursorPos(window, &lastX, nullptr);
+	}
+	if (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_RELEASE)
+	{
+		mouseLeftPressed = false;
+		deltaX = 0.0;
+	}
+
+	if (button == GLFW_MOUSE_BUTTON_RIGHT && action == GLFW_PRESS)
+	{
+		mouseRightPressed = true;
+		glfwGetCursorPos(window, nullptr, &lastY);
+	}
+	if (button == GLFW_MOUSE_BUTTON_RIGHT && action == GLFW_RELEASE)
+	{
+		mouseRightPressed = false;
+		deltaY = 0.0;
+	}
+}
+
+void cursor_position_callback(GLFWwindow* window, double xpos, double ypos)
+{
+	if (mouseLeftPressed)
+	{
+		deltaX = lastX - xpos;
+
+		lastX = xpos;
+	}
+
+	if (mouseRightPressed)
+	{
+		deltaY = ypos - lastY;
+
+		lastY = ypos;
+	}
+}
+
+void scroll_callback(GLFWwindow* window, double xoffset, double yoffset)
+{
+	scrollOffsetX = xoffset;
+	scrollOffsetY = yoffset;
+}
+
+void processInput(GLFWwindow* window, Camera& camera)
+{
+	if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
+		glfwSetWindowShouldClose(window, true);
+
+	if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS)
+	{
+		float distance = glm::distance(camera.position, camera.focal);
+
+		glm::vec3 front = glm::normalize(camera.focal - camera.position);
+		glm::vec3 right = glm::normalize(glm::cross(front, camera.up));
+		glm::vec3 currentUp = glm::normalize(glm::cross(right, front));
+
+		glm::quat currentQuat = glm::quatLookAt(front, camera.up);
+
+		//glm::quat pitchQuat = glm::angleAxis(glm::radians(deltaY), right);
+		glm::quat yawQuat = glm::angleAxis(glm::radians(-deltaX), currentUp);
+
+		//glm::quat deltaQuat = yawQuat * pitchQuat;
+		glm::quat deltaQuat = yawQuat;
+		glm::quat newQuat = deltaQuat * currentQuat;
+
+		glm::vec3 newFront = glm::rotate(newQuat, glm::vec3(0.0f, 0.0f, -1.0f));
+		glm::vec3 newUp = glm::rotate(newQuat, glm::vec3(0.0f, 1.0f, 0.0f));
+
+		camera.position = camera.focal - newFront * distance;
+		camera.up = newUp;
+	}
+
+	if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS)
+	{
+		float distance = glm::distance(camera.position, camera.focal);
+
+		glm::vec3 front = glm::normalize(camera.focal - camera.position);
+		glm::vec3 right = glm::normalize(glm::cross(front, camera.up));
+		glm::vec3 currentUp = glm::normalize(glm::cross(right, front));
+
+		glm::quat currentQuat = glm::quatLookAt(front, camera.up);
+
+		glm::quat pitchQuat = glm::angleAxis(glm::radians(deltaY), right);
+		//glm::quat yawQuat = glm::angleAxis(glm::radians(-deltaX), currentUp);
+
+		//glm::quat deltaQuat = yawQuat * pitchQuat;
+		glm::quat deltaQuat = pitchQuat;
+		glm::quat newQuat = deltaQuat * currentQuat;
+
+		glm::vec3 newFront = glm::rotate(newQuat, glm::vec3(0.0f, 0.0f, -1.0f));
+		glm::vec3 newUp = glm::rotate(newQuat, glm::vec3(0.0f, 1.0f, 0.0f));
+
+		camera.position = camera.focal - newFront * distance;
+		camera.up = newUp;
+	}
+
+	glm::vec3 front = glm::normalize(camera.position - camera.focal);
+
+	if (scrollOffsetY > 0)
+	{
+		camera.position -= front * 0.05f;
+		scrollOffsetY = 0.0;
+	}
+	else if (scrollOffsetY < 0)
+	{
+		camera.position += front * 0.05f;
+		scrollOffsetY = 0.0;
+	}
+}
 
 int main()
 {
@@ -29,6 +153,9 @@ int main()
 	std::cout << "success to create glfw window!" << std::endl;
 
 	glfwMakeContextCurrent(window);
+	glfwSetMouseButtonCallback(window, mouse_button_callback);
+	glfwSetCursorPosCallback(window, cursor_position_callback);
+	glfwSetScrollCallback(window, scroll_callback);
 
 	if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
 	{
@@ -38,6 +165,7 @@ int main()
 	std::cout << "success to init glad!" << std::endl;
 
 	glEnable(GL_DEPTH_TEST);
+	glDepthFunc(GL_LESS);
 
 	unsigned int fbo;
 	glGenFramebuffers(1, &fbo);
@@ -80,7 +208,7 @@ int main()
 		}
 	)");
 
-	glm::vec3 lightPos = glm::vec3(3.0f, 0.0f, 3.0f);
+	glm::vec3 lightPos = glm::vec3(3.0f, 3.0f, 0.0f);
 
 	glm::mat4 lightView = glm::lookAt(lightPos, glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
 	glm::mat4 lightProjection = glm::ortho(-10.0f, 10.0f, -10.0f, 10.0f, 1.0f, 10.0f);
@@ -123,6 +251,7 @@ int main()
 
 		uniform sampler2D depthMap;
 		uniform vec3 CC;
+		uniform vec3 lightPos;
 
 		float ShadowCalculation(vec4 fragPosLightSpace)
 		{
@@ -142,16 +271,16 @@ int main()
 			vec3 fdx = dFdx(vertexVC);
 			vec3 fdy = dFdy(vertexVC);
 			vec3 normal = normalize(cross(fdx, fdy));
-			if(normal.z < 0.0) normal = -normal;
 
 			vec3 color = CC;
 
-			float df = max(0.00001, normal.z);
+			vec3 lightDir = normalize(lightPos - fs_in.FragPos);
+			float diff = max(dot(lightDir, normal), 0.0);
 
-			color *= df;
+			color *= diff;
 
 			float shadow = ShadowCalculation(fs_in.FragPosLightSpace);
-			//color *= shadow;
+			color *= shadow;
 
 			FragColor = vec4(color, 1.0);
 		}
@@ -159,6 +288,10 @@ int main()
 
 	while (!glfwWindowShouldClose(window))
 	{
+		processInput(window, camera);
+		auto view = camera.getviewmatrix();
+		auto projection = camera.getprojmatrix(800.0f / 600.0f);
+
 		glViewport(0, 0, 1024, 1024);
 		glBindFramebuffer(GL_FRAMEBUFFER, fbo);
 		glClear(GL_DEPTH_BUFFER_BIT);
@@ -173,31 +306,31 @@ int main()
 		depthrogram.SetValue("model", model);
 		RenderQuad();
 
+		glViewport(0, 0, 800, 600);
 		glBindFramebuffer(GL_FRAMEBUFFER, 0);
 		glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-		auto view = camera.getviewmatrix();
-		auto projection = camera.getprojmatrix(800.0f / 600.0f);
-
 		shadow.bind();
+		shadow.SetValue("projection", projection);
+		shadow.SetValue("view", view);
+		shadow.SetValue("lightPos", lightPos);
 		shadow.SetValue("depthMap", 0);
 		glActiveTexture(GL_TEXTURE0);
 		glBindTexture(GL_TEXTURE_2D, texture);
+
 		model = glm::mat4(1);
-		shadow.SetValue("projection", projection);
-		shadow.SetValue("view", view);
 		shadow.SetValue("model", model);
+		shadow.SetValue("CC", glm::vec3(240, 190, 77) / 255.0f);
 		RenderCube();
 
-		shadow.SetValue("depthMap", 0);
-		glActiveTexture(GL_TEXTURE0);
-		glBindTexture(GL_TEXTURE_2D, texture);
 		model = glm::mat4(1);
-		shadow.SetValue("projection", projection);
-		shadow.SetValue("view", view);
+		model = glm::translate(model, glm::vec3(0, -0.5f, 0));
+		model = glm::rotate(model, glm::radians(90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+		model = glm::scale(model, glm::vec3(3, 3, 1));
 		shadow.SetValue("model", model);
-		//RenderQuad();
+		shadow.SetValue("CC", glm::vec3(1, 0, 0));
+		RenderQuad();
 
 		glfwSwapBuffers(window);
 		glfwPollEvents();
