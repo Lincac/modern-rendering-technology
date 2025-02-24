@@ -179,6 +179,8 @@ int main()
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+	GLfloat borderColor[] = { 1.0, 1.0, 1.0, 1.0 };
+	glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, borderColor);
 
 	glBindFramebuffer(GL_FRAMEBUFFER, fbo);
 	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, texture, 0);
@@ -208,16 +210,18 @@ int main()
 		}
 	)");
 
-	glm::vec3 lightPos = glm::vec3(3.0f, 3.0f, 0.0f);
+	glm::vec3 lightPos = glm::vec3(3.0f, 2.0f, 3.0f);
 
 	glm::mat4 lightView = glm::lookAt(lightPos, glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
-	glm::mat4 lightProjection = glm::ortho(-10.0f, 10.0f, -10.0f, 10.0f, 1.0f, 10.0f);
+	glm::mat4 lightProjection = glm::ortho(-10.0f, 10.0f, -10.0f, 10.0f, 1.0f, 40.0f);
 	glm::mat4 lightsapceMatrix = lightProjection * lightView;
 
 	ShaderProgram shadow;
 	shadow.compile(R"(
 		#version 460 core
 		layout(location = 0) in vec3 aPos;
+		layout(location = 1) in vec3 aNorm;
+		layout(location = 2) in vec2 aTexCoord;
 
 		uniform mat4 lightSpaceMatrix;
 		uniform mat4 model;
@@ -227,16 +231,16 @@ int main()
 		out VS_OUT
 		{
 			vec3 FragPos;
-			vec3 FragPosViewSpace;
+			vec3 Normal;
 			vec4 FragPosLightSpace;
 		} vs_out;
 
 		void main()
 		{
 			vs_out.FragPos = vec3(model * vec4(aPos, 1.0));
-			vs_out.FragPosViewSpace = vec3(view * vec4(vs_out.FragPos, 1.0));
+			vs_out.Normal = transpose(inverse(mat3(model))) * aNorm;
 			vs_out.FragPosLightSpace = lightSpaceMatrix * vec4(vs_out.FragPos, 1.0);
-			gl_Position = projection * view * model * vec4(aPos, 1.0);
+			gl_Position = projection * view * vec4(vs_out.FragPos, 1.0);
 		}
 	)", R"(
 		#version 460 core
@@ -245,7 +249,7 @@ int main()
 		in VS_OUT
 		{
 			vec3 FragPos;
-			vec3 FragPosViewSpace;
+			vec3 Normal;
 			vec4 FragPosLightSpace;
 		} fs_in;
 
@@ -257,20 +261,22 @@ int main()
 		{
 			vec3 projCoords = fragPosLightSpace.xyz / fragPosLightSpace.w;
 			projCoords = projCoords * 0.5 + 0.5;
+
 			float closestDepth = texture(depthMap, projCoords.xy).r;
 			float currentDepth = projCoords.z;
-			float shadow = currentDepth > closestDepth  ? 1.0 : 0.0;
 
-			return shadow;
+			vec3 normal = normalize(fs_in.Normal);
+			vec3 lightDir = normalize(lightPos - fs_in.FragPos);
+
+			float bias = max(0.05 * (1.0 - dot(normal, lightDir)), 0.005);
+			float shadow = currentDepth - bias > closestDepth  ? 1.0 : 0.0;
+
+			return 1.0 - shadow;
 		}
 
 		void main()
 		{
-			vec3 vertexVC = fs_in.FragPosViewSpace;
-
-			vec3 fdx = dFdx(vertexVC);
-			vec3 fdy = dFdy(vertexVC);
-			vec3 normal = normalize(cross(fdx, fdy));
+			vec3 normal = normalize(fs_in.Normal);
 
 			vec3 color = CC;
 
@@ -296,12 +302,20 @@ int main()
 		glBindFramebuffer(GL_FRAMEBUFFER, fbo);
 		glClear(GL_DEPTH_BUFFER_BIT);
 
+		//glEnable(GL_CULL_FACE);
+		//glCullFace(GL_FRONT);
+
 		glm::mat4 model = glm::mat4(1);
 		depthrogram.bind();
 		depthrogram.SetValue("lightSpaceMatrix", lightsapceMatrix);
 		depthrogram.SetValue("model", model);
 		RenderCube();
+
+		//glDisable(GL_CULL_FACE);
+
 		model = glm::mat4(1);
+		model = glm::translate(model, glm::vec3(0, 0, -0.5f));
+		model = glm::scale(model, glm::vec3(3, 3, 1));
 		depthrogram.SetValue("lightSpaceMatrix", lightsapceMatrix);
 		depthrogram.SetValue("model", model);
 		RenderQuad();
@@ -315,6 +329,7 @@ int main()
 		shadow.SetValue("projection", projection);
 		shadow.SetValue("view", view);
 		shadow.SetValue("lightPos", lightPos);
+		shadow.SetValue("lightSpaceMatrix", lightsapceMatrix);
 		shadow.SetValue("depthMap", 0);
 		glActiveTexture(GL_TEXTURE0);
 		glBindTexture(GL_TEXTURE_2D, texture);
@@ -325,8 +340,7 @@ int main()
 		RenderCube();
 
 		model = glm::mat4(1);
-		model = glm::translate(model, glm::vec3(0, -0.5f, 0));
-		model = glm::rotate(model, glm::radians(90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+		model = glm::translate(model, glm::vec3(0, 0, -0.5f));
 		model = glm::scale(model, glm::vec3(3, 3, 1));
 		shadow.SetValue("model", model);
 		shadow.SetValue("CC", glm::vec3(1, 0, 0));
@@ -346,47 +360,47 @@ void RenderCube()
 	if (cubeVAO == -1)
 	{
 		float vertices[] = {
-			-0.5f, -0.5f, -0.5f,
-			 0.5f, -0.5f, -0.5f,
-			 0.5f,  0.5f, -0.5f,
-			 0.5f,  0.5f, -0.5f,
-			-0.5f,  0.5f, -0.5f,
-			-0.5f, -0.5f, -0.5f,
-
-			-0.5f, -0.5f,  0.5f,
-			 0.5f, -0.5f,  0.5f,
-			 0.5f,  0.5f,  0.5f,
-			 0.5f,  0.5f,  0.5f,
-			-0.5f,  0.5f,  0.5f,
-			-0.5f, -0.5f,  0.5f,
-
-			-0.5f,  0.5f,  0.5f,
-			-0.5f,  0.5f, -0.5f,
-			-0.5f, -0.5f, -0.5f,
-			-0.5f, -0.5f, -0.5f,
-			-0.5f, -0.5f,  0.5f,
-			-0.5f,  0.5f,  0.5f,
-
-			 0.5f,  0.5f,  0.5f,
-			 0.5f,  0.5f, -0.5f,
-			 0.5f, -0.5f, -0.5f,
-			 0.5f, -0.5f, -0.5f,
-			 0.5f, -0.5f,  0.5f,
-			 0.5f,  0.5f,  0.5f,
-
-			-0.5f, -0.5f, -0.5f,
-			 0.5f, -0.5f, -0.5f,
-			 0.5f, -0.5f,  0.5f,
-			 0.5f, -0.5f,  0.5f,
-			-0.5f, -0.5f,  0.5f,
-			-0.5f, -0.5f, -0.5f,
-
-			-0.5f,  0.5f, -0.5f,
-			 0.5f,  0.5f, -0.5f,
-			 0.5f,  0.5f,  0.5f,
-			 0.5f,  0.5f,  0.5f,
-			-0.5f,  0.5f,  0.5f,
-			-0.5f,  0.5f, -0.5f
+		   -0.5f, -0.5f, -0.5f, 0.0f, 0.0f, -1.0f, 0.0f, 0.0f, // Bottom-left
+			0.5f, 0.5f, -0.5f, 0.0f, 0.0f, -1.0f, 1.0f, 1.0f, // top-right
+			0.5f, -0.5f, -0.5f, 0.0f, 0.0f, -1.0f, 1.0f, 0.0f, // bottom-right
+			0.5f, 0.5f, -0.5f, 0.0f, 0.0f, -1.0f, 1.0f, 1.0f,  // top-right
+			-0.5f, -0.5f, -0.5f, 0.0f, 0.0f, -1.0f, 0.0f, 0.0f,  // bottom-left
+			-0.5f, 0.5f, -0.5f, 0.0f, 0.0f, -1.0f, 0.0f, 1.0f,// top-left
+			// Front face
+			-0.5f, -0.5f, 0.5f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, // bottom-left
+			0.5f, -0.5f, 0.5f, 0.0f, 0.0f, 1.0f, 1.0f, 0.0f,  // bottom-right
+			0.5f, 0.5f, 0.5f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f,  // top-right
+			0.5f, 0.5f, 0.5f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f, // top-right
+			-0.5f, 0.5f, 0.5f, 0.0f, 0.0f, 1.0f, 0.0f, 1.0f,  // top-left
+			-0.5f, -0.5f, 0.5f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f,  // bottom-left
+			// Left face
+			-0.5f, 0.5f, 0.5f, -1.0f, 0.0f, 0.0f, 1.0f, 0.0f, // top-right
+			-0.5f, 0.5f, -0.5f, -1.0f, 0.0f, 0.0f, 1.0f, 1.0f, // top-left
+			-0.5f, -0.5f, -0.5f, -1.0f, 0.0f, 0.0f, 0.0f, 1.0f,  // bottom-left
+			-0.5f, -0.5f, -0.5f, -1.0f, 0.0f, 0.0f, 0.0f, 1.0f, // bottom-left
+			-0.5f, -0.5f, 0.5f, -1.0f, 0.0f, 0.0f, 0.0f, 0.0f,  // bottom-right
+			-0.5f, 0.5f, 0.5f, -1.0f, 0.0f, 0.0f, 1.0f, 0.0f, // top-right
+			// Right face
+			0.5f, 0.5f, 0.5f, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f, // top-left
+			0.5f, -0.5f, -0.5f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f, // bottom-right
+			0.5f, 0.5f, -0.5f, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f, // top-right
+			0.5f, -0.5f, -0.5f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f,  // bottom-right
+			0.5f, 0.5f, 0.5f, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f,  // top-left
+			0.5f, -0.5f, 0.5f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, // bottom-left
+			// Bottom face
+			-0.5f, -0.5f, -0.5f, 0.0f, -1.0f, 0.0f, 0.0f, 1.0f, // top-right
+			0.5f, -0.5f, -0.5f, 0.0f, -1.0f, 0.0f, 1.0f, 1.0f, // top-left
+			0.5f, -0.5f, 0.5f, 0.0f, -1.0f, 0.0f, 1.0f, 0.0f,// bottom-left
+			0.5f, -0.5f, 0.5f, 0.0f, -1.0f, 0.0f, 1.0f, 0.0f, // bottom-left
+			-0.5f, -0.5f, 0.5f, 0.0f, -1.0f, 0.0f, 0.0f, 0.0f, // bottom-right
+			-0.5f, -0.5f, -0.5f, 0.0f, -1.0f, 0.0f, 0.0f, 1.0f, // top-right
+			// Top face
+			-0.5f, 0.5f, -0.5f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f,// top-left
+			0.5f, 0.5f, 0.5f, 0.0f, 1.0f, 0.0f, 1.0f, 0.0f, // bottom-right
+			0.5f, 0.5f, -0.5f, 0.0f, 1.0f, 0.0f, 1.0f, 1.0f, // top-right
+			0.5f, 0.5f, 0.5f, 0.0f, 1.0f, 0.0f, 1.0f, 0.0f, // bottom-right
+			-0.5f, 0.5f, -0.5f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f,// top-left
+			-0.5f, 0.5f, 0.5f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f // bottom-left
 		};
 
 		glGenVertexArrays(1, &cubeVAO);
@@ -396,8 +410,14 @@ void RenderCube()
 		glBindBuffer(GL_ARRAY_BUFFER, cubeVBO);
 		glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
 
-		glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
 		glEnableVertexAttribArray(0);
+		glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(GLfloat), (GLvoid*)0);
+
+		glEnableVertexAttribArray(1);
+		glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(GLfloat), (GLvoid*)(3 * sizeof(GLfloat)));
+
+		glEnableVertexAttribArray(2);
+		glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(GLfloat), (GLvoid*)(6 * sizeof(GLfloat)));
 
 		glBindBuffer(GL_ARRAY_BUFFER, 0);
 		glBindVertexArray(0);
@@ -414,13 +434,13 @@ void RenderQuad()
 	if (quadVAO == -1)
 	{
 		float vertices[] = {
-			-1.0f, -1.0f, 0.0f,
-			 1.0f, -1.0f, 0.0f,
-			 1.0f,  1.0f, 0.0f,
+			 1.0f, 1.0f, 0.0f,	 0.0f, 0.0f, 1.0f, 1.0f, 1.0f,
+			-1.0f, -1.0f, 0.0f,	 0.0f, 0.0f, 1.0f, 0.0f, 0.0f,
+			-1.0f,  1.0f, 0.0f,	 0.0f, 0.0f, 1.0f, 0.0f, 1.0f,
 
-			-1.0f, -1.0f, 0.0f,
-			 1.0f,  1.0f, 0.0f,
-			-1.0f,  1.0f, 0.0f,
+			 1.0f, 1.0f, 0.0f,	 0.0f, 0.0f, 1.0f,	1.0f, 1.0f,
+			 1.0f, -1.0f, 0.0f,	 0.0f, 0.0f, 1.0f,	1.0f, 0.0f,
+			-1.0f, -1.0f, 0.0f,  0.0f, 0.0f, 1.0f,	0.0f, 0.0f,
 		};
 
 		glGenVertexArrays(1, &quadVAO);
@@ -430,8 +450,14 @@ void RenderQuad()
 		glBindBuffer(GL_ARRAY_BUFFER, quadVBO);
 		glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
 
-		glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
 		glEnableVertexAttribArray(0);
+		glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(GLfloat), (GLvoid*)0);
+
+		glEnableVertexAttribArray(1);
+		glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(GLfloat), (GLvoid*)(3 * sizeof(GLfloat)));
+
+		glEnableVertexAttribArray(2);
+		glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(GLfloat), (GLvoid*)(6 * sizeof(GLfloat)));
 
 		glBindBuffer(GL_ARRAY_BUFFER, 0);
 		glBindVertexArray(0);
