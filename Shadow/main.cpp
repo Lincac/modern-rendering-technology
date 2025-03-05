@@ -13,7 +13,7 @@
 Camera camera;
 
 void RenderCube();
-void RenderQuad();
+void RenderFloor();
 
 bool mouseLeftPressed = false;
 bool mouseRightPressed = false;
@@ -165,7 +165,6 @@ int main()
 	std::cout << "success to init glad!" << std::endl;
 
 	glEnable(GL_DEPTH_TEST);
-	glDepthFunc(GL_LESS);
 
 	unsigned int fbo;
 	glGenFramebuffers(1, &fbo);
@@ -265,11 +264,10 @@ int main()
 			float closestDepth = texture(depthMap, projCoords.xy).r;
 			float currentDepth = projCoords.z;
 
-			vec3 normal = normalize(fs_in.Normal);
-			vec3 lightDir = normalize(lightPos - fs_in.FragPos);
+			float shadow = currentDepth - 0.001 > closestDepth  ? 1.0 : 0.0;
 
-			float bias = max(0.05 * (1.0 - dot(normal, lightDir)), 0.005);
-			float shadow = currentDepth - bias > closestDepth  ? 1.0 : 0.0;
+			if(projCoords.z > 1.0)
+				shadow = 0.0;
 
 			return 1.0 - shadow;
 		}
@@ -302,23 +300,19 @@ int main()
 		glBindFramebuffer(GL_FRAMEBUFFER, fbo);
 		glClear(GL_DEPTH_BUFFER_BIT);
 
-		//glEnable(GL_CULL_FACE);
-		//glCullFace(GL_FRONT);
+		glEnable(GL_CULL_FACE);
+		glCullFace(GL_BACK);
 
 		glm::mat4 model = glm::mat4(1);
+
 		depthrogram.bind();
 		depthrogram.SetValue("lightSpaceMatrix", lightsapceMatrix);
 		depthrogram.SetValue("model", model);
 		RenderCube();
 
-		//glDisable(GL_CULL_FACE);
+		glDisable(GL_CULL_FACE);
 
-		model = glm::mat4(1);
-		model = glm::translate(model, glm::vec3(0, 0, -0.5f));
-		model = glm::scale(model, glm::vec3(3, 3, 1));
-		depthrogram.SetValue("lightSpaceMatrix", lightsapceMatrix);
-		depthrogram.SetValue("model", model);
-		RenderQuad();
+		RenderFloor();
 
 		glViewport(0, 0, 800, 600);
 		glBindFramebuffer(GL_FRAMEBUFFER, 0);
@@ -326,10 +320,10 @@ int main()
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
 		shadow.bind();
+		shadow.SetValue("lightSpaceMatrix", lightsapceMatrix);
 		shadow.SetValue("projection", projection);
 		shadow.SetValue("view", view);
 		shadow.SetValue("lightPos", lightPos);
-		shadow.SetValue("lightSpaceMatrix", lightsapceMatrix);
 		shadow.SetValue("depthMap", 0);
 		glActiveTexture(GL_TEXTURE0);
 		glBindTexture(GL_TEXTURE_2D, texture);
@@ -339,12 +333,8 @@ int main()
 		shadow.SetValue("CC", glm::vec3(240, 190, 77) / 255.0f);
 		RenderCube();
 
-		model = glm::mat4(1);
-		model = glm::translate(model, glm::vec3(0, 0, -0.5f));
-		model = glm::scale(model, glm::vec3(3, 3, 1));
-		shadow.SetValue("model", model);
 		shadow.SetValue("CC", glm::vec3(1, 0, 0));
-		RenderQuad();
+		RenderFloor();
 
 		glfwSwapBuffers(window);
 		glfwPollEvents();
@@ -428,26 +418,26 @@ void RenderCube()
 	glBindVertexArray(0);
 }
 
-unsigned int quadVAO = -1, quadVBO;
-void RenderQuad()
+unsigned int floorVAO = -1, floorVBO;
+void RenderFloor()
 {
-	if (quadVAO == -1)
+	if (floorVAO == -1)
 	{
 		float vertices[] = {
-			 1.0f, 1.0f, 0.0f,	 0.0f, 0.0f, 1.0f, 1.0f, 1.0f,
-			-1.0f, -1.0f, 0.0f,	 0.0f, 0.0f, 1.0f, 0.0f, 0.0f,
-			-1.0f,  1.0f, 0.0f,	 0.0f, 0.0f, 1.0f, 0.0f, 1.0f,
+			25.0f, -0.5f, 25.0f, 0.0f, 1.0f, 0.0f, 25.0f, 0.0f,
+			-25.0f, -0.5f, -25.0f, 0.0f, 1.0f, 0.0f, 0.0f, 25.0f,
+			-25.0f, -0.5f, 25.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f,
 
-			 1.0f, 1.0f, 0.0f,	 0.0f, 0.0f, 1.0f,	1.0f, 1.0f,
-			 1.0f, -1.0f, 0.0f,	 0.0f, 0.0f, 1.0f,	1.0f, 0.0f,
-			-1.0f, -1.0f, 0.0f,  0.0f, 0.0f, 1.0f,	0.0f, 0.0f,
+			25.0f, -0.5f, 25.0f, 0.0f, 1.0f, 0.0f, 25.0f, 0.0f,
+			25.0f, -0.5f, -25.0f, 0.0f, 1.0f, 0.0f, 25.0f, 25.0f,
+			-25.0f, -0.5f, -25.0f, 0.0f, 1.0f, 0.0f, 0.0f, 25.0f
 		};
 
-		glGenVertexArrays(1, &quadVAO);
-		glBindVertexArray(quadVAO);
+		glGenVertexArrays(1, &floorVAO);
+		glBindVertexArray(floorVAO);
 
-		glGenBuffers(1, &quadVBO);
-		glBindBuffer(GL_ARRAY_BUFFER, quadVBO);
+		glGenBuffers(1, &floorVBO);
+		glBindBuffer(GL_ARRAY_BUFFER, floorVBO);
 		glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
 
 		glEnableVertexAttribArray(0);
@@ -463,7 +453,7 @@ void RenderQuad()
 		glBindVertexArray(0);
 	}
 
-	glBindVertexArray(quadVAO);
+	glBindVertexArray(floorVAO);
 	glDrawArrays(GL_TRIANGLES, 0, 6);
 	glBindVertexArray(0);
 }
