@@ -15,3 +15,6 @@ add_dependencies(HelloTriangle API)
 
 add_subdirectory(Shadow)
 add_dependencies(Shadow API)
+
+add_subdirectory(OIT)
+add_dependencies(OIT API)
