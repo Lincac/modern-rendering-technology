@@ -47,9 +47,9 @@ void objread(const std::string& path, std::vector<float>& vertex, std::vector<in
 
 				iss >> f1 >> f2 >> f3;
 
-				face.push_back(f1);
-				face.push_back(f2);
-				face.push_back(f3);
+				face.push_back(f1 - 1);
+				face.push_back(f2 - 1);
+				face.push_back(f3 - 1);
 			}
 		}
 	}
@@ -88,9 +88,9 @@ void objread(const std::string& path, std::vector<glm::vec3>& vertex, std::vecto
 
 				iss >> f1 >> f2 >> f3;
 
-				face.push_back(f1);
-				face.push_back(f2);
-				face.push_back(f3);
+				face.push_back(f1 - 1);
+				face.push_back(f2 - 1);
+				face.push_back(f3 - 1);
 			}
 		}
 	}
