@@ -138,6 +138,34 @@ void processInput(GLFWwindow* window, Camera& camera)
 	}
 }
 
+GLuint quadVAO = 0;
+GLuint quadVBO;
+void RenderQuad()
+{
+	if (quadVAO == 0)
+	{
+		GLfloat quadVertices[] = {
+			-1.0f, 1.0f, 0.0f, 0.0f, 1.0f,
+			-1.0f, -1.0f, 0.0f, 0.0f, 0.0f,
+			1.0f, 1.0f, 0.0f, 1.0f, 1.0f,
+			1.0f, -1.0f, 0.0f, 1.0f, 0.0f,
+		};
+
+		glGenVertexArrays(1, &quadVAO);
+		glGenBuffers(1, &quadVBO);
+		glBindVertexArray(quadVAO);
+		glBindBuffer(GL_ARRAY_BUFFER, quadVBO);
+		glBufferData(GL_ARRAY_BUFFER, sizeof(quadVertices), &quadVertices, GL_STATIC_DRAW);
+		glEnableVertexAttribArray(0);
+		glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(GLfloat), (GLvoid*)0);
+		glEnableVertexAttribArray(1);
+		glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(GLfloat), (GLvoid*)(3 * sizeof(GLfloat)));
+	}
+	glBindVertexArray(quadVAO);
+	glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+	glBindVertexArray(0);
+}
+
 int main()
 {
 	glfwInit();
@@ -167,6 +195,7 @@ int main()
 	std::cout << "success to init glad!" << std::endl;
 
 	glEnable(GL_DEPTH_TEST);
+	glDepthFunc(GL_LESS);
 
 	ShaderProgram program;
 	program.compile(R"(
@@ -198,8 +227,25 @@ int main()
 
 		uniform vec3 color;
 
+		uniform sampler2D depthMap;
+		uniform float near_plane = 0.1;
+		uniform float far_plane = 5000.0;
+		float LinearizeDepth(float depth)
+		{
+			float z = depth * 2.0 - 1.0;
+
+			float a = 2.0 * near_plane * far_plane;
+			float b = far_plane + near_plane - z * (far_plane - near_plane);
+
+			return a / b / far_plane;
+		}
+
 		void main()
 		{
+			vec2 texCoords = gl_FragCoord.xy / vec2(textureSize(depthMap, 0));
+			float depth = LinearizeDepth(texture(depthMap, texCoords).r);
+			if(LinearizeDepth(gl_FragCoord.z) <= depth + 0.0001) discard;
+
 			vec3 vertexVS = fs_in.FragPosViewSapce;
 
 			vec3 fdx = dFdx(vertexVS);
@@ -212,6 +258,48 @@ int main()
 
 			FragColor = vec4(color * df, 1.0);
 		}
+	)");
+
+	ShaderProgram blend;
+	blend.compile(R"(
+		#version 460 core
+		layout (location = 0) in vec4 aPosition;
+		layout (location = 1) in vec2 aTexCoord;
+
+		out vec2 TexCoord;
+
+		void main()
+		{
+			TexCoord = aTexCoord;
+			gl_Position = vec4(aPosition.xy, 0.0, 1.0);
+		}
+
+	)", R"(
+		#version 460 core
+		out vec4 FragColor;
+		in vec2 TexCoord;
+
+		uniform sampler2DArray colorArray;
+
+		void main()
+		{
+			vec3 color = vec3(0);
+			float total = 0.0;
+			for(int i=0;i<6;i++)
+			{
+				vec3 uv = vec3(TexCoord, i);
+				vec4 tex = texture(colorArray, uv);
+
+				if(tex.a < 1e-5) continue;
+				color += tex.rgb * tex.a;
+				total += tex.a;
+			}
+
+			if(total > 1e-5) color /= total;
+
+			FragColor = vec4(color, 1);
+		}
+
 	)");
 
 	std::vector<glm::vec3> vertex;
@@ -236,29 +324,111 @@ int main()
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
 	glBindVertexArray(0);
 
+#pragma region PingPong
+	unsigned int FBO[2];
+	glGenFramebuffers(1, FBO);
+
+	unsigned int color[2];
+	glGenTextures(1, color);
+
+	unsigned int depth[2];
+	glGenTextures(1, depth);
+
+	glBindFramebuffer(GL_FRAMEBUFFER, FBO[0]);
+
+	glBindTexture(GL_TEXTURE_2D, color[0]);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 800, 600, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, color[0], 0);
+
+	glBindTexture(GL_TEXTURE_2D, depth[0]);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, 800, 600, 0, GL_DEPTH_COMPONENT, GL_FLOAT, NULL);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, depth[0], 0);
+
+	if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+		std::cout << "ERROR::FRAMEBUFFER:: Framebuffer is not complete!" << std::endl;
+
+	glBindFramebuffer(GL_FRAMEBUFFER, FBO[1]);
+
+	glBindTexture(GL_TEXTURE_2D, color[1]);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 800, 600, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, color[1], 0);
+
+	glBindTexture(GL_TEXTURE_2D, depth[1]);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, 800, 600, 0, GL_DEPTH_COMPONENT, GL_FLOAT, NULL);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, depth[1], 0);
+
+	if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+		std::cout << "ERROR::FRAMEBUFFER:: Framebuffer is not complete!" << std::endl;
+
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+#pragma endregion
+
+	unsigned texture2DArray;
+	glGenTextures(1, &texture2DArray);
+	glBindTexture(GL_TEXTURE_2D_ARRAY, texture2DArray);
+	glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_RGBA, 800, 600, 6, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+	glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+	glBindTexture(GL_TEXTURE_2D_ARRAY, 0);
+
 	while (!glfwWindowShouldClose(window))
 	{
 		processInput(window, camera);
 
-		glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
-		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
 		auto view = camera.getviewmatrix();
 		auto projection = camera.getprojmatrix(800.0f / 600.0f);
 
-		program.bind();
-		program.SetValue("projection", projection);
-		program.SetValue("view", view);
+		for (size_t i = 0; i < 6; i++)
+		{
+			glBindFramebuffer(GL_FRAMEBUFFER, FBO[i % 2]);
+			glClearColor(0, 0, 0, 0);
+			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-		glm::mat4 model = glm::mat4(1);
-		model = glm::scale(model, glm::vec3(1.8));
-		program.SetValue("model", model);
-		program.SetValue("color", glm::vec3(252, 227, 205) / glm::vec3(255));
+			program.bind();
+			program.SetValue("projection", projection);
+			program.SetValue("view", view);
 
-		glBindVertexArray(obj_vao);
-		glDrawElements(GL_TRIANGLES, face.size(), GL_UNSIGNED_INT, 0);
+			glm::mat4 model = glm::mat4(1);
+			model = glm::scale(model, glm::vec3(1.8));
+			program.SetValue("model", model);
+			program.SetValue("color", glm::vec3(252, 227, 205) / glm::vec3(255));
 
-		glBindVertexArray(0);
+			program.SetValue("near_plane", camera.near_clip);
+			program.SetValue("far_plane", camera.far_clip);
+
+			program.SetValue("depthMap", 0);
+			glActiveTexture(GL_TEXTURE0);
+			glBindTexture(GL_TEXTURE_2D, i % 2 == 1 ? depth[0] : depth[1]);
+
+			glBindVertexArray(obj_vao);
+			glDrawElements(GL_TRIANGLES, face.size(), GL_UNSIGNED_INT, 0);
+			glBindVertexArray(0);
+
+			glBindTexture(GL_TEXTURE_2D_ARRAY, texture2DArray);
+			glCopyTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, i, 0, 0, 800, 600);
+			glBindTexture(GL_TEXTURE_2D_ARRAY, 0);
+		}
+
+		glBindFramebuffer(GL_FRAMEBUFFER, 0);
+		glClearColor(0, 0, 0, 0);
+		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+		blend.bind();
+		blend.SetValue("colorArray", 0);
+		glActiveTexture(GL_TEXTURE0);
+		glBindTexture(GL_TEXTURE_2D_ARRAY, texture2DArray);
+		RenderQuad();
 
 		glfwSwapBuffers(window);
 		glfwPollEvents();
