@@ -197,6 +197,52 @@ int main()
 	glEnable(GL_DEPTH_TEST);
 	glDepthFunc(GL_LESS);
 
+	ShaderProgram program_1;
+	program_1.compile(R"(
+		#version 460 core
+		layout(location = 0) in vec3 aPos;
+
+		uniform mat4 model;
+		uniform mat4 view;
+		uniform mat4 projection;
+
+		out VS_OUT
+		{
+			vec3 FragPosViewSapce;
+		} vs_out;
+
+		void main()
+		{
+			vs_out.FragPosViewSapce = vec3(view * model * vec4(aPos, 1.0));
+			gl_Position = projection * vec4(vs_out.FragPosViewSapce, 1.0);
+		}
+	)", R"(
+		#version 460 core
+		out vec4 FragColor;
+
+		in VS_OUT
+		{
+			vec3 FragPosViewSapce;
+		} fs_in;
+
+		uniform vec3 color;
+
+		void main()
+		{
+			vec3 vertexVS = fs_in.FragPosViewSapce;
+
+			vec3 fdx = dFdx(vertexVS);
+			vec3 fdy = dFdy(vertexVS);
+
+			vec3 normalVS = normalize(cross(fdx, fdy));
+			if(normalVS.z < 0) { normalVS.z = -1.0 * normalVS.z; }
+
+			float df = max(0.00001, normalVS.z);
+
+			FragColor = vec4(color * df, 0.7);
+		}
+	)");
+
 	ShaderProgram program;
 	program.compile(R"(
 		#version 460 core
@@ -256,7 +302,7 @@ int main()
 
 			float df = max(0.00001, normalVS.z);
 
-			FragColor = vec4(color * df, 1.0);
+			FragColor = vec4(color * df, 0.7);
 		}
 	)");
 
@@ -326,13 +372,13 @@ int main()
 
 #pragma region PingPong
 	unsigned int FBO[2];
-	glGenFramebuffers(1, FBO);
+	glGenFramebuffers(2, FBO);
 
 	unsigned int color[2];
-	glGenTextures(1, color);
+	glGenTextures(2, color);
 
 	unsigned int depth[2];
-	glGenTextures(1, depth);
+	glGenTextures(2, depth);
 
 	glBindFramebuffer(GL_FRAMEBUFFER, FBO[0]);
 
@@ -382,6 +428,10 @@ int main()
 	glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 	glBindTexture(GL_TEXTURE_2D_ARRAY, 0);
 
+	glBindFramebuffer(GL_FRAMEBUFFER, FBO[1]);
+	glClear(GL_DEPTH_BUFFER_BIT);
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
 	while (!glfwWindowShouldClose(window))
 	{
 		processInput(window, camera);
@@ -389,7 +439,28 @@ int main()
 		auto view = camera.getviewmatrix();
 		auto projection = camera.getprojmatrix(800.0f / 600.0f);
 
-		for (size_t i = 0; i < 6; i++)
+		glBindFramebuffer(GL_FRAMEBUFFER, FBO[0]);
+		glClearColor(0, 0, 0, 0);
+		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+		program_1.bind();
+		program_1.SetValue("projection", projection);
+		program_1.SetValue("view", view);
+
+		glm::mat4 model = glm::mat4(1);
+		model = glm::scale(model, glm::vec3(1.8));
+		program_1.SetValue("model", model);
+		program_1.SetValue("color", glm::vec3(252, 227, 205) / glm::vec3(255));
+
+		glBindVertexArray(obj_vao);
+		glDrawElements(GL_TRIANGLES, face.size(), GL_UNSIGNED_INT, 0);
+		glBindVertexArray(0);
+
+		glBindTexture(GL_TEXTURE_2D_ARRAY, texture2DArray);
+		glCopyTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, 0, 0, 0, 800, 600);
+		glBindTexture(GL_TEXTURE_2D_ARRAY, 0);
+
+		for (size_t i = 1; i < 6; i++)
 		{
 			glBindFramebuffer(GL_FRAMEBUFFER, FBO[i % 2]);
 			glClearColor(0, 0, 0, 0);
