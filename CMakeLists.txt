@@ -18,3 +18,6 @@ add_dependencies(Shadow API)
 
 add_subdirectory(OIT)
 add_dependencies(OIT API)
+
+add_subdirectory(DeferredRendering)
+add_dependencies(DeferredRendering API)
