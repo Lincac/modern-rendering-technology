@@ -21,3 +21,6 @@ add_dependencies(OIT API)
 
 add_subdirectory(DeferredRendering)
 add_dependencies(DeferredRendering API)
+
+add_subdirectory(Lighting)
+add_dependencies(Lighting API)
