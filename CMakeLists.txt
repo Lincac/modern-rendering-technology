@@ -24,3 +24,6 @@ add_dependencies(DeferredRendering API)
 
 add_subdirectory(Lighting)
 add_dependencies(Lighting API)
+
+add_subdirectory(LightingSource)
+add_dependencies(LightingSource API)
