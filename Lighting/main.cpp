@@ -100,11 +100,6 @@ void processInput(GLFWwindow* window, Camera& camera)
 		LightMode = 4;
 		std::cout << "LightMode : " << 4 << std::endl;
 	}
-	else if (glfwGetKey(window, GLFW_KEY_5) == GLFW_PRESS)
-	{
-		LightMode = 5;
-		std::cout << "LightMode : " << 5 << std::endl;
-	}
 
 	if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS)
 	{
@@ -320,14 +315,6 @@ int main()
 				vec3 correct = pow((diff + spec) * color, vec3(1.0/gamma));
 
 				FragColor = vec4(correct, 1.0);
-			}
-			else if(lightmode == 5)
-			{
-				vec3 reflectDir = reflect(-lightDir, normalVS);
-				float df = max(0.00001, dot(viewDir, reflectDir));
-				float sf = max(0.00001, pow(dot(viewDir, reflectDir), 32));
-
-				FragColor = vec4(df * color + sf * vec3(1), 1.0);
 			}
 		}
 	)");
