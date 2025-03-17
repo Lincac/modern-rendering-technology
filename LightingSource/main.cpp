@@ -91,11 +91,6 @@ void processInput(GLFWwindow* window, Camera& camera)
 		LightMode = 2;
 		std::cout << "LightMode : " << 2 << std::endl;
 	}
-	else if (glfwGetKey(window, GLFW_KEY_3) == GLFW_PRESS)
-	{
-		LightMode = 3;
-		std::cout << "LightMode : " << 3 << std::endl;
-	}
 
 	if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS)
 	{
