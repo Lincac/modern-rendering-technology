@@ -52,6 +52,8 @@ void objread(const std::string& path, std::vector<float>& vertex, std::vector<in
 				face.push_back(f3 - 1);
 			}
 		}
+
+		file.close();
 	}
 	else
 	{
@@ -93,6 +95,63 @@ void objread(const std::string& path, std::vector<glm::vec3>& vertex, std::vecto
 				face.push_back(f3 - 1);
 			}
 		}
+
+		file.close();
+	}
+	else
+	{
+		std::cout << "Error : can not read path : " << path << std::endl;
+	}
+}
+
+template<typename T>
+void objwrite(const std::string& path, const std::vector<T>& vertex, const std::vector<int>& face)
+{
+}
+
+template<>
+void objwrite(const std::string& path, const std::vector<float>& vertex, const std::vector<int>& face)
+{
+	std::ofstream file(path);
+
+	if (file.is_open())
+	{
+		for (size_t i = 0; i < vertex.size(); i += 3)
+		{
+			file << "v " << vertex[i] << ' ' << vertex[i + 1] << ' ' << vertex[i + 2] << std::endl;
+		}
+
+		for (size_t i = 0; i < face.size(); i += 3)
+		{
+			file << "f " << face[i] + 1 << ' ' << face[i + 1] + 1 << ' ' << face[i + 2] + 1 << std::endl;
+		}
+
+		file.close();
+	}
+	else
+	{
+		std::cout << "Error : can not read path : " << path << std::endl;
+	}
+}
+
+template<>
+void objwrite(const std::string& path, const std::vector<glm::vec3>& vertex, const std::vector<int>& face)
+{
+	std::ofstream file(path);
+
+	if (file.is_open())
+	{
+		for (size_t i = 0; i < vertex.size(); i++)
+		{
+			file << "v " << vertex[i].x << ' ' << vertex[i].y << ' ' << vertex[i].z << std::endl;
+		}
+
+		for (size_t i = 0; i < face.size(); i += 3)
+		{
+			file << "f " << face[i] + 1 << ' ' << face[i + 1] + 1 << ' ' << face[i + 2] + 1 << std::endl;
+		}
+
+		file.close();
 	}
 	else
 	{
