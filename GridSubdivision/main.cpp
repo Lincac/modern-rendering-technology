@@ -27,11 +27,13 @@ public:
 		edge_vertexes.clear();
 		edge_vertexes.resize(vertices.size());
 
+		newVertices = vertices;
+
 		for (size_t i = 0; i < faces.size(); i += 3)
 		{
-			int vertex3_id = add_edge_vertexes(faces[i], faces[i + 1], faces[i + 2]);
-			int vertex4_id = add_edge_vertexes(faces[i + 1], faces[i + 2], faces[i]);
-			int vertex5_id = add_edge_vertexes(faces[i], faces[i + 2], faces[i + 1]);
+			int vertex3_id = add_edge_vertexes(faces[i], faces[i + 1], faces[i + 2], newVertices);
+			int vertex4_id = add_edge_vertexes(faces[i + 1], faces[i + 2], faces[i], newVertices);
+			int vertex5_id = add_edge_vertexes(faces[i], faces[i + 2], faces[i + 1], newVertices);
 
 			newFaces.push_back(faces[i]); newFaces.push_back(vertex3_id); newFaces.push_back(vertex5_id);
 			newFaces.push_back(vertex3_id); newFaces.push_back(faces[i + 1]); newFaces.push_back(vertex4_id);
@@ -47,23 +49,21 @@ public:
 				int new_vertex2_id = edge_vertexes[i][j].second.z;
 				if (new_vertex2_id == -1)
 				{
-					vertices[new_vertex0_id] = (vertices[i] + vertices[vertex_id]) / 2.0f;
+					newVertices[new_vertex0_id] = (newVertices[i] + newVertices[vertex_id]) / 2.0f;
 				}
 				else
 				{
-					vertices[new_vertex0_id] =
-						(vertices[i] + vertices[vertex_id]) * 3.0f / 8.0f +
-						(vertices[new_vertex1_id] + vertices[new_vertex2_id]) / 8.0f;
+					newVertices[new_vertex0_id] =
+						(newVertices[i] + newVertices[vertex_id]) * 3.0f / 8.0f +
+						(newVertices[new_vertex1_id] + newVertices[new_vertex2_id]) / 8.0f;
 				}
 			}
 		}
 
 		for (int i = 0; i < vertices.size(); ++i) {
-			for (int j = 0; j < edge_vertexes[i].size(); ++j) {
-				if (edge_vertexes[i][j].first > i) {
-					edge_vertexes[edge_vertexes[i][j].first].push_back(
-						std::make_pair(i, edge_vertexes[i][j].second));
-				}
+			for (int j = 0; j < edge_vertexes[i].size() && edge_vertexes[i][j].first > i; ++j) {
+				edge_vertexes[edge_vertexes[i][j].first].push_back(
+					std::make_pair(i, edge_vertexes[i][j].second));
 			}
 		}
 
@@ -71,31 +71,30 @@ public:
 		for (int i = 0; i < vertices.size(); ++i) {
 			int k = edge_vertexes[i].size();
 			std::vector<int> adj_boundary;
-			glm::vec3 v3f;
+			glm::vec3 v3f = glm::vec3(0);
 			for (int j = 0; j < k; ++j) {
 				int vertex_id = edge_vertexes[i][j].first;
 				if (edge_vertexes[i][j].second.z == -1) {
 					adj_boundary.push_back(vertex_id);
 				}
-				v3f = v3f + vertices[vertex_id];
+				v3f = v3f + newVertices[vertex_id];
 			}
 			if (adj_boundary.size() == 2) {
-				temp_positions.push_back(vertices[i] * 3.0f / 4.0f +
-					(vertices[adj_boundary[0]] + vertices[adj_boundary[1]]) / 8.0f);
+				temp_positions.push_back(newVertices[i] * 3.0f / 4.0f +
+					(newVertices[adj_boundary[0]] + newVertices[adj_boundary[1]]) / 8.0f);
 			}
 			else {
-				float beta = (5.0 / 8 - glm::sqrt(3.0 / 8 + cos(2 * glm::pi<float>() / k) / 4)) / k;
-				temp_positions.push_back(vertices[i] * (1 - k * beta) + v3f * beta);
+				float beta = (5.0 / 8 - sqr(3.0 / 8 + cos(2 * acos(-1.0) / k) / 4)) / k;
+				temp_positions.push_back(newVertices[i] * (1 - k * beta) + v3f * beta);
 			}
 		}
-		for (int i = 0; i < vertices.size(); ++i) {
-			vertices[i] = temp_positions[i];
-		}
 
-		newVertices = vertices;
+		for (int i = 0; i < vertices.size(); ++i) {
+			newVertices[i] = temp_positions[i];
+		}
 	}
 
-	int add_edge_vertexes(int vertex0_id, int vertex1_id, int vertex2_id) {
+	int add_edge_vertexes(int vertex0_id, int vertex1_id, int vertex2_id, std::vector<glm::vec3>& newVertices) {
 		int ret = -1;
 		if (vertex0_id > vertex1_id)
 		{
@@ -110,9 +109,9 @@ public:
 			}
 		}
 		if (index == -1) {
-			ret = vertices.size();
+			ret = newVertices.size();
 			edge_vertexes[vertex0_id].push_back(std::make_pair(vertex1_id, glm::ivec3(ret, vertex2_id, -1)));
-			vertices.push_back(glm::vec3(0));
+			newVertices.push_back(glm::vec3(0));
 		}
 		else {
 			ret = edge_vertexes[vertex0_id][index].second.x;
@@ -120,13 +119,18 @@ public:
 		}
 		return ret;
 	}
+
+	float sqr(float x)
+	{
+		return x * x;
+	}
 };
 
 int main()
 {
 	std::vector<glm::vec3> vertices;
 	std::vector<int> faces;
-	objread(R"(D:\user\modern-rendering-technology\models\pyramid.obj)", vertices, faces);
+	objread(R"(D:\user\modern-rendering-technology\models\pyramid_2.obj)", vertices, faces);
 
 	Loop loop;
 	loop.vertices = vertices;
@@ -137,5 +141,5 @@ int main()
 
 	loop.subdivide(newVertices, newFaces);
 
-	objwrite(R"(D:\user\modern-rendering-technology\models\pyramid_1.obj)", newVertices, newFaces);
+	objwrite(R"(D:\user\modern-rendering-technology\models\pyramid_3.obj)", newVertices, newFaces);
 }
