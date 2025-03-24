@@ -30,3 +30,6 @@ add_dependencies(LightingSource API)
 
 add_subdirectory(GridSubdivision)
 add_dependencies(GridSubdivision API)
+
+add_subdirectory(GridSimplification)
+add_dependencies(GridSimplification API)
