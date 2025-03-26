@@ -7,6 +7,20 @@
 #include <glm.hpp>
 #include <Tool.h>
 
+double norm(const glm::vec4& v)
+{
+	double t = 0;
+	for (int i = 0; i < 4; i++) t += v[i] * v[i];
+	return sqrt(t);
+}
+
+float norm(const glm::vec3& v)
+{
+	float t = 0;
+	for (int i = 0; i < 3; i++) t += v[i] * v[i];
+	return sqrt(t);
+}
+
 struct CompareIvec2
 {
 	bool operator()(const glm::ivec2& a, const glm::ivec2& b) const {
@@ -101,9 +115,7 @@ public:
 		while (!heap.empty()) heap.pop();
 		for (const auto& e : edges)
 		{
-			float len = glm::length(vertices[e.x] - vertices[e.y]);
-
-			if (len > 1e8) return;
+			if (norm(vertices[e.x] - vertices[e.y]) > 1e8) return;
 			auto pos = calculateQ(e);
 			heap.push(std::make_pair(-pos.second, e));
 		}
@@ -115,7 +127,8 @@ public:
 
 		for (const auto& f : faces[e.x])
 		{
-			auto n = glm::normalize(glm::cross(vertices[f.x] - vertices[e.x], vertices[f.y] - vertices[e.x]));
+			auto n = glm::cross(vertices[f.x] - vertices[e.x], vertices[f.y] - vertices[e.x]);
+			n = n / norm(n);
 			auto plane = glm::vec4(n, -glm::dot(vertices[e.x], n));
 			outerProductFast(plane, plane, q);
 		}
@@ -143,7 +156,7 @@ public:
 		catch (...) {
 			v = (vertices[e.x] + vertices[e.y]) / 2.0f;
 		}
-		if (glm::length(v - vertices[e.x]) + glm::length(v - vertices[e.y]) > 2.0 * glm::length(vertices[e.x] - vertices[e.y]))
+		if (norm(v - vertices[e.x]) + norm(v - vertices[e.y]) > 2.0 * norm(vertices[e.x] - vertices[e.y]))
 		{
 			v = (vertices[e.x] + vertices[e.y]) / 2.0f;
 		}
@@ -165,7 +178,7 @@ public:
 			if (std::find(edges.begin(), edges.end(), tmp.second) != edges.end()) continue;
 			if (removed[tmp.second.x] || removed[tmp.second.y]) continue;
 
-			float len = glm::length(vertices[tmp.second.x] - vertices[tmp.second.y]);
+			float len = norm(vertices[tmp.second.x] - vertices[tmp.second.y]);
 			if (len > threshold) continue;
 
 			auto act = calculateQ(tmp.second);
@@ -283,9 +296,7 @@ public:
 		for (auto x : neighbor)
 		{
 			auto e = glm::ivec2(glm::min(x, v), glm::max(x, v));
-			float len = glm::length(vertices[e.x] - vertices[e.y]);
-
-			if (len > threshold) return;
+			if (norm(vertices[e.x] - vertices[e.y]) > threshold) return;
 			auto pos = calculateQ(e);
 			heap.push(std::make_pair(-pos.second, e));
 		}
