@@ -264,7 +264,7 @@ int main()
 			float closestDepth = texture(depthMap, projCoords.xy).r;
 			float currentDepth = projCoords.z;
 
-			float shadow = currentDepth - 0.001 > closestDepth  ? 1.0 : 0.0;
+			float shadow = currentDepth > closestDepth  ? 1.0 : 0.0;
 
 			if(projCoords.z > 1.0)
 				shadow = 0.0;
@@ -301,7 +301,7 @@ int main()
 		glClear(GL_DEPTH_BUFFER_BIT);
 
 		glEnable(GL_CULL_FACE);
-		glCullFace(GL_BACK);
+		glCullFace(GL_FRONT);
 
 		glm::mat4 model = glm::mat4(1);
 
@@ -309,10 +309,8 @@ int main()
 		depthrogram.SetValue("lightSpaceMatrix", lightsapceMatrix);
 		depthrogram.SetValue("model", model);
 		RenderCube();
-
-		glDisable(GL_CULL_FACE);
-
 		RenderFloor();
+		glDisable(GL_CULL_FACE);
 
 		glViewport(0, 0, 800, 600);
 		glBindFramebuffer(GL_FRAMEBUFFER, 0);
