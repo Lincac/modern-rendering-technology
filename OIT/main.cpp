@@ -194,57 +194,9 @@ int main()
 	}
 	std::cout << "success to init glad!" << std::endl;
 
-	glEnable(GL_DEPTH_TEST);
-	glDepthFunc(GL_LESS);
-
-	ShaderProgram program_1;
-	program_1.compile(R"(
-		#version 460 core
-		layout(location = 0) in vec3 aPos;
-
-		uniform mat4 model;
-		uniform mat4 view;
-		uniform mat4 projection;
-
-		out VS_OUT
-		{
-			vec3 FragPosViewSapce;
-		} vs_out;
-
-		void main()
-		{
-			vs_out.FragPosViewSapce = vec3(view * model * vec4(aPos, 1.0));
-			gl_Position = projection * vec4(vs_out.FragPosViewSapce, 1.0);
-		}
-	)", R"(
-		#version 460 core
-		out vec4 FragColor;
-
-		in VS_OUT
-		{
-			vec3 FragPosViewSapce;
-		} fs_in;
-
-		uniform vec3 color;
-
-		void main()
-		{
-			vec3 vertexVS = fs_in.FragPosViewSapce;
-
-			vec3 fdx = dFdx(vertexVS);
-			vec3 fdy = dFdy(vertexVS);
-
-			vec3 normalVS = normalize(cross(fdx, fdy));
-			if(normalVS.z < 0) { normalVS.z = -1.0 * normalVS.z; }
-
-			float df = max(0.00001, normalVS.z);
-
-			FragColor = vec4(color * df, 0.7);
-		}
-	)");
-
-	ShaderProgram program;
-	program.compile(R"(
+#pragma region 着色器加载
+	ShaderProgram program_0;
+	program_0.compile(R"(
 		#version 460 core
 		layout(location = 0) in vec3 aPos;
 
@@ -279,7 +231,62 @@ int main()
 		{
 			vec2 texCoords = gl_FragCoord.xy / vec2(textureSize(depthMap, 0));
 			float depth = texture(depthMap, texCoords).r;
-			if(gl_FragCoord.z < depth + 0.001) discard;
+			if(gl_FragCoord.z > depth - 0.0001) discard;
+
+			vec3 vertexVS = fs_in.FragPosViewSapce;
+
+			vec3 fdx = dFdx(vertexVS);
+			vec3 fdy = dFdy(vertexVS);
+
+			vec3 normalVS = normalize(cross(fdx, fdy));
+			if(normalVS.z < 0) { normalVS.z = -1.0 * normalVS.z; }
+
+			float df = max(0.00001, normalVS.z);
+
+			FragColor = vec4(color * df, 0.7);
+		}
+	)");
+
+	ShaderProgram program_1;
+	program_1.compile(R"(
+		#version 460 core
+		layout(location = 0) in vec3 aPos;
+
+		uniform mat4 model;
+		uniform mat4 view;
+		uniform mat4 projection;
+
+		out VS_OUT
+		{
+			vec3 FragPosViewSapce;
+		} vs_out;
+
+		void main()
+		{
+			vs_out.FragPosViewSapce = vec3(view * model * vec4(aPos, 1.0));
+			gl_Position = projection * vec4(vs_out.FragPosViewSapce, 1.0);
+		}
+	)", R"(
+		#version 460 core
+		out vec4 FragColor;
+
+		in VS_OUT
+		{
+			vec3 FragPosViewSapce;
+		} fs_in;
+
+		uniform vec3 color;
+
+		uniform sampler2D depthMap_0;
+		uniform sampler2D depthMap_1;
+
+		void main()
+		{
+			vec2 texCoords = gl_FragCoord.xy / vec2(textureSize(depthMap_0, 0));
+			float depth_0 = texture(depthMap_0, texCoords).r;
+			float depth_1 = texture(depthMap_1, texCoords).r;
+			if(gl_FragCoord.z < depth_0 + 0.0001) discard;
+			if(gl_FragCoord.z > depth_1 - 0.0001) discard;
 
 			vec3 vertexVS = fs_in.FragPosViewSapce;
 
@@ -332,7 +339,9 @@ int main()
 		}
 
 	)");
+#pragma endregion
 
+#pragma region 物体加载
 	std::vector<glm::vec3> vertex;
 	std::vector<int> face;
 	objread(R"(D:\user\modern-rendering-technology\models\dragon.obj)", vertex, face);
@@ -354,6 +363,7 @@ int main()
 
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
 	glBindVertexArray(0);
+#pragma endregion
 
 #pragma region PingPong
 	unsigned int FBO[3];
@@ -403,6 +413,27 @@ int main()
 
 #pragma endregion
 
+#pragma region 不透明FBO
+	glBindFramebuffer(GL_FRAMEBUFFER, FBO[2]);
+
+	glBindTexture(GL_TEXTURE_2D, color[2]);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 800, 600, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, color[2], 0);
+
+	glBindTexture(GL_TEXTURE_2D, depth[2]);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, 800, 600, 0, GL_DEPTH_COMPONENT, GL_FLOAT, NULL);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, depth[2], 0);
+
+	if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+		std::cout << "ERROR::FRAMEBUFFER:: Framebuffer is not complete!" << std::endl;
+
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+#pragma endregion
+
 	unsigned texture2DArray;
 	glGenTextures(1, &texture2DArray);
 	glBindTexture(GL_TEXTURE_2D_ARRAY, texture2DArray);
@@ -420,18 +451,31 @@ int main()
 		auto view = camera.getviewmatrix();
 		auto projection = camera.getprojmatrix(800.0f / 600.0f);
 
+		// 渲染不透明物体
+		glBindFramebuffer(GL_FRAMEBUFFER, FBO[2]);
+		glClearColor(0, 0, 0, 1);
+		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+		glEnable(GL_DEPTH_TEST);
+		glDepthFunc(GL_LESS);
+
+		// 渲染半透明物体
+
 		glBindFramebuffer(GL_FRAMEBUFFER, FBO[0]);
 		glClearColor(0, 0, 0, 1);
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-		program_1.bind();
-		program_1.SetValue("projection", projection);
-		program_1.SetValue("view", view);
-
+		program_0.bind();
+		program_0.SetValue("projection", projection);
+		program_0.SetValue("view", view);
 		glm::mat4 model = glm::mat4(1);
 		model = glm::scale(model, glm::vec3(1.8));
-		program_1.SetValue("model", model);
-		program_1.SetValue("color", glm::vec3(252, 227, 205) / glm::vec3(255));
+		program_0.SetValue("model", model);
+		program_0.SetValue("color", glm::vec3(252, 227, 205) / glm::vec3(255));
+
+		program_0.SetValue("depthMap", 0);
+		glActiveTexture(GL_TEXTURE0);
+		glBindTexture(GL_TEXTURE_2D, depth[2]);
 
 		glBindVertexArray(obj_vao);
 		glDrawElements(GL_TRIANGLES, face.size(), GL_UNSIGNED_INT, 0);
@@ -447,21 +491,22 @@ int main()
 			glClearColor(0, 0, 0, 1);
 			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-			program.bind();
-			program.SetValue("projection", projection);
-			program.SetValue("view", view);
+			program_1.bind();
+			program_1.SetValue("projection", projection);
+			program_1.SetValue("view", view);
 
 			glm::mat4 model = glm::mat4(1);
 			model = glm::scale(model, glm::vec3(1.8));
-			program.SetValue("model", model);
-			program.SetValue("color", glm::vec3(252, 227, 205) / glm::vec3(255));
+			program_1.SetValue("model", model);
+			program_1.SetValue("color", glm::vec3(252, 227, 205) / glm::vec3(255));
 
-			program.SetValue("near_plane", camera.near_clip);
-			program.SetValue("far_plane", camera.far_clip);
-
-			program.SetValue("depthMap", 0);
+			program_1.SetValue("depthMap_0", 0);
 			glActiveTexture(GL_TEXTURE0);
 			glBindTexture(GL_TEXTURE_2D, depth[(i - 1) % 2]);
+
+			program_1.SetValue("depthMap_1", 1);
+			glActiveTexture(GL_TEXTURE1);
+			glBindTexture(GL_TEXTURE_2D, depth[2]);
 
 			glBindVertexArray(obj_vao);
 			glDrawElements(GL_TRIANGLES, face.size(), GL_UNSIGNED_INT, 0);
