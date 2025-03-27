@@ -274,23 +274,12 @@ int main()
 		uniform vec3 color;
 
 		uniform sampler2D depthMap;
-		uniform float near_plane = 0.1;
-		uniform float far_plane = 5000.0;
-		float LinearizeDepth(float depth)
-		{
-			float z = depth * 2.0 - 1.0;
-
-			float a = 2.0 * near_plane * far_plane;
-			float b = far_plane + near_plane - z * (far_plane - near_plane);
-
-			return a / b / far_plane;
-		}
 
 		void main()
 		{
 			vec2 texCoords = gl_FragCoord.xy / vec2(textureSize(depthMap, 0));
-			float depth = LinearizeDepth(texture(depthMap, texCoords).r);
-			if(LinearizeDepth(gl_FragCoord.z) <= depth + 0.0001) discard;
+			float depth = texture(depthMap, texCoords).r;
+			if(gl_FragCoord.z < depth + 0.001) discard;
 
 			vec3 vertexVS = fs_in.FragPosViewSapce;
 
@@ -329,19 +318,15 @@ int main()
 
 		void main()
 		{
-			vec3 color = vec3(0);
-			float total = 0.0;
-			for(int i=0;i<6;i++)
+			vec3 uv = vec3(TexCoord, 5);
+			vec3 color = texture(colorArray, uv).rgb;
+			for(int i=4;i>=0;i--)
 			{
-				vec3 uv = vec3(TexCoord, i);
+				uv = vec3(TexCoord, i);
 				vec4 tex = texture(colorArray, uv);
 
-				if(tex.a < 1e-5) continue;
-				color += tex.rgb * tex.a;
-				total += tex.a;
+				color = tex.rgb * tex.a + color * (1.0 - tex.a);
 			}
-
-			if(total > 1e-5) color /= total;
 
 			FragColor = vec4(color, 1);
 		}
@@ -371,14 +356,14 @@ int main()
 	glBindVertexArray(0);
 
 #pragma region PingPong
-	unsigned int FBO[2];
-	glGenFramebuffers(2, FBO);
+	unsigned int FBO[3];
+	glGenFramebuffers(3, FBO);
 
-	unsigned int color[2];
-	glGenTextures(2, color);
+	unsigned int color[3];
+	glGenTextures(3, color);
 
-	unsigned int depth[2];
-	glGenTextures(2, depth);
+	unsigned int depth[3];
+	glGenTextures(3, depth);
 
 	glBindFramebuffer(GL_FRAMEBUFFER, FBO[0]);
 
@@ -428,10 +413,6 @@ int main()
 	glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 	glBindTexture(GL_TEXTURE_2D_ARRAY, 0);
 
-	glBindFramebuffer(GL_FRAMEBUFFER, FBO[1]);
-	glClear(GL_DEPTH_BUFFER_BIT);
-	glBindFramebuffer(GL_FRAMEBUFFER, 0);
-
 	while (!glfwWindowShouldClose(window))
 	{
 		processInput(window, camera);
@@ -440,7 +421,7 @@ int main()
 		auto projection = camera.getprojmatrix(800.0f / 600.0f);
 
 		glBindFramebuffer(GL_FRAMEBUFFER, FBO[0]);
-		glClearColor(0, 0, 0, 0);
+		glClearColor(0, 0, 0, 1);
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
 		program_1.bind();
@@ -463,7 +444,7 @@ int main()
 		for (size_t i = 1; i < 6; i++)
 		{
 			glBindFramebuffer(GL_FRAMEBUFFER, FBO[i % 2]);
-			glClearColor(0, 0, 0, 0);
+			glClearColor(0, 0, 0, 1);
 			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
 			program.bind();
@@ -480,7 +461,7 @@ int main()
 
 			program.SetValue("depthMap", 0);
 			glActiveTexture(GL_TEXTURE0);
-			glBindTexture(GL_TEXTURE_2D, i % 2 == 1 ? depth[0] : depth[1]);
+			glBindTexture(GL_TEXTURE_2D, depth[(i - 1) % 2]);
 
 			glBindVertexArray(obj_vao);
 			glDrawElements(GL_TRIANGLES, face.size(), GL_UNSIGNED_INT, 0);
